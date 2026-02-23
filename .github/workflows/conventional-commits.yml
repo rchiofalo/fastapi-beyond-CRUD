@@ -1,0 +1,31 @@
+name: Conventional Commits Check
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+
+jobs:
+  check-commits:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Conventional Commits
+        uses: webiny/action-conventional-commits@v1.3.0
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Close PR and notify on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --body "Conventional Commits check failed. Commits must follow the format: \`type: description\` (e.g. \`feat: add login\`, \`fix: token expiry\`). See https://www.conventionalcommits.org for details. This PR has been closed."
+
+          gh pr close ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }}

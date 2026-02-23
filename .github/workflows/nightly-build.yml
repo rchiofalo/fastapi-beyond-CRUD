@@ -1,0 +1,87 @@
+name: Nightly Build
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/testdb
+          JWT_SECRET: test-secret-key-for-ci
+          JWT_ALGORITHM: HS256
+          REDIS_URL: redis://localhost:6379/0
+          MAIL_USERNAME: test@ethereal.email
+          MAIL_PASSWORD: testpassword
+          MAIL_SERVER: smtp.ethereal.email
+          MAIL_PORT: 587
+          MAIL_FROM: test@ethereal.email
+          MAIL_FROM_NAME: Bookly
+          DOMAIN: localhost:8000
+        run: pytest src/tests/ -v
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=nightly-{{date 'YYYYMMDD'}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Notify on failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.ethereal.email
+          server_port: 587
+          username: ${{ secrets.ETHEREAL_USERNAME }}
+          password: ${{ secrets.ETHEREAL_PASSWORD }}
+          subject: "Nightly Build Failed - ${{ github.repository }}"
+          to: ${{ secrets.ETHEREAL_EMAIL }}
+          from: ${{ secrets.ETHEREAL_EMAIL }}
+          body: |
+            Nightly build failed for ${{ github.repository }}.
+
+            Details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
