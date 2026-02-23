@@ -4,7 +4,6 @@ books_prefix = "/api/v1/books"
 
 
 def test_get_all_books(test_client,fake_book_service,fake_session):
-    assert False, "intentional failure for demo"
     response = test_client.get(
         url=f"{books_prefix}"
     )
